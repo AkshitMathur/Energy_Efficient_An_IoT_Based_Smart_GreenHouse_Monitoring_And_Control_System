@@ -1,4 +1,3 @@
-# Energy_Efficient_An_IoT_Based_Smart_GreenHouse_Monitoring_And_Control_System
 # 🌱 Smart Greenhouse Environment Monitoring and Control System
 
 An IoT-based greenhouse monitoring and control system that automates the measurement and regulation of key environmental parameters — temperature, humidity, soil moisture, light intensity, and CO₂ — using long-range LoRa communication, a Raspberry Pi gateway, and a real-time cloud dashboard.
@@ -17,6 +16,8 @@ An IoT-based greenhouse monitoring and control system that automates the measure
 Manual monitoring of greenhouse conditions is labour-intensive, inconsistent, and difficult to scale. This project replaces manual checks with an automated, low-power, long-range IoT pipeline: environmental sensors feed an ESP32 sensor node, data travels over LoRa to a Raspberry Pi gateway, gets stored in the Supabase cloud, and is visualized in real time on a web dashboard — which can also send control commands back to actuators (ventilation fan, irrigation pump, and lighting).
 
 The system was designed and built as part of the **Project Based Learning (0701230605)** course, Department of Electronics and Telecommunication Engineering, **Symbiosis Institute of Technology, Pune**.
+
+> 📌 This repository currently includes the **Raspberry Pi gateway scripts** (LoRa ↔ Supabase bridge, OLED status display) along with the project report, presentation, and dashboard UI. ESP32 firmware and the dashboard frontend are not included.
 
 ## ✨ Features
 
@@ -87,60 +88,76 @@ The dashboard includes four main sections:
 
 ```
 smart-greenhouse-monitoring/
-├── firmware/
-│   ├── sensor_node/         # ESP32 sensor node code (sensor reads + LoRa TX + deep sleep)
-│   └── actuator_node/       # ESP32 actuator node code (LoRa RX + relay control)
 ├── gateway/
-│   └── raspberry_pi/        # LoRa RX, Supabase REST API integration (POST/GET)
-├── dashboard/
-│   └── web-app/             # Dashboard frontend (Figma export / web implementation)
-├── hardware/
-│   ├── schematics/          # Wiring diagrams
-│   └── enclosure/           # Acrylic model design files
+│   ├── lora_sensor_supabase.py     # LoRa receiver → parses sensor packets → pushes to Supabase
+│   ├── lora_final.py               # Polls Supabase for pending commands → sends over LoRa to actuator node
+│   ├── oled_display_lora_sensor.py # LoRa receiver + live OLED status display + Supabase upload
+│   ├── lora_send_test.py           # Standalone LoRa TX test script (sends FAN:ON / FAN:OFF)
+│   ├── .env.example                # Template for Supabase credentials (copy to .env, fill in, never commit .env)
+│   └── requirements.txt
 ├── docs/
-│   ├── report.pdf           # Full project report
-│   ├── presentation.pptx    # Final review presentation
-│   └── datasheets/          # Component datasheets
+│   ├── report.pdf                  # Full project report
+│   ├── presentation.pptx           # Final review presentation
+│   └── datasheets/                 # Component datasheets (BH1750, SCD40, ESP32, SX1278, Raspberry Pi)
+├── dashboard-screens/
+│   └── dashboard.pdf               # UI screens: login, dashboard, controls, analytics
+├── photos/
+│   ├── greenhouse-model.jpg
+│   ├── gateway-oled.jpg
+│   ├── sensor-node-interior.jpg
+│   └── actuator-node-interior.jpg
+├── .gitignore
 └── README.md
 ```
 
-> Adjust this structure to match how your code is actually organized in the repo.
+> ESP32 sensor/actuator firmware and the dashboard frontend are not included yet — add them under `firmware/` and `dashboard/` if you upload that code later.
 
-## 🚀 Getting Started
+## 🚀 Running the Gateway Scripts
 
-### Prerequisites
-- Arduino IDE / PlatformIO (for ESP32 firmware)
-- Python 3.x (for Raspberry Pi gateway script)
-- A Supabase project (URL + API key)
-- LoRa SX1278 modules, ESP32 boards, Raspberry Pi 5, and the sensors/actuators listed above
+These scripts run on the **Raspberry Pi gateway** and require an RFM9x LoRa HAT/module wired via SPI (and an SSD1306 OLED over I²C for `oled_display_lora_sensor.py`).
 
-### Setup
+### 1. Install dependencies
+```bash
+pip install adafruit-circuitpython-rfm9x adafruit-circuitpython-ssd1306 pillow requests python-dotenv
+```
 
-1. **Clone the repository**
-   ```bash
-   git clone https://github.com/<your-username>/smart-greenhouse-monitoring.git
-   cd smart-greenhouse-monitoring
-   ```
+### 2. Configure Supabase credentials
+Create a `.env` file in `gateway/` (this file is git-ignored, **never commit it**):
+```
+SUPABASE_URL=https://your-project.supabase.co
+SUPABASE_KEY=your-anon-key-here
+```
+Each script then loads these at the top instead of hardcoding them:
+```python
+import os
+from dotenv import load_dotenv
+load_dotenv()
 
-2. **Flash the sensor node**
-   - Open `firmware/sensor_node/` in Arduino IDE
-   - Update Wi-Fi/LoRa pin config and sensor calibration values
-   - Flash to the ESP32 connected to the sensors
+SUPABASE_URL = os.getenv("SUPABASE_URL")
+SUPABASE_KEY = os.getenv("SUPABASE_KEY")
+```
 
-3. **Flash the actuator node**
-   - Open `firmware/actuator_node/` in Arduino IDE
-   - Flash to the ESP32 connected to the relay module and actuators
+> ⚠️ **Security note:** earlier versions of these scripts had the Supabase key hardcoded directly in the source. If that key was ever pushed to a public repo or shared, regenerate it from your Supabase project settings before going further.
 
-4. **Set up the Raspberry Pi gateway**
-   ```bash
-   cd gateway/raspberry_pi
-   pip install -r requirements.txt
-   ```
-   - Add your Supabase URL and API key to the config/environment file
-   - Run the gateway script to start receiving LoRa data and syncing with the cloud
+### 3. Run
+```bash
+# Receive sensor data over LoRa and upload to Supabase
+python gateway/lora_sensor_supabase.py
 
-5. **Run the dashboard**
-   - Deploy `dashboard/web-app/` (or open the Figma prototype) and connect it to your Supabase instance
+# Poll Supabase for pending commands and forward to the actuator node over LoRa
+python gateway/lora_final.py
+
+# Receive sensor data, show it on the OLED, and upload to Supabase
+python gateway/oled_display_lora_sensor.py
+
+# Standalone LoRa send test (no Supabase needed)
+python gateway/lora_send_test.py
+```
+
+`lora_sensor_supabase.py` and `oled_display_lora_sensor.py` expect incoming LoRa packets in the format:
+```
+Temp:22.3,Humidity:62.3,Soil:56.8,Light:77.7,CO2:424.8
+```
 
 ## 📈 Results
 
@@ -156,7 +173,6 @@ smart-greenhouse-monitoring/
 - Mobile app with push notifications/alerts
 - Solar-powered nodes for full energy autonomy
 - Scaling to multi-greenhouse / large-area deployments
-
 
 ## 📚 References
 
