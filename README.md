@@ -157,18 +157,6 @@ smart-greenhouse-monitoring/
 - Solar-powered nodes for full energy autonomy
 - Scaling to multi-greenhouse / large-area deployments
 
-## 👥 Team
-
-| Name | PRN |
-|---|---|
-| Adrish Purkayastha | 23070123011 |
-| Akshit Mathur | 23070123014 |
-| Alok Chawat | 23070123016 |
-| Kautik Verma | 23070123073 |
-
-**Faculty Guide:** Dr. Snehal Bhosale
-**Department:** Electronics and Telecommunication Engineering
-**Institution:** Symbiosis Institute of Technology, Pune (Symbiosis International Deemed University)
 
 ## 📚 References
 
