@@ -1,6 +1,6 @@
 # 🌱 Smart Greenhouse Environment Monitoring and Control System
 
-An IoT-based greenhouse monitoring and control system that automates the measurement and regulation of key environmental parameters — temperature, humidity, soil moisture, light intensity, and CO₂ — using long-range LoRa communication, a Raspberry Pi gateway, and a real-time cloud dashboard.
+An IoT-based system that continuously monitors greenhouse environmental parameters (temperature, humidity, soil moisture, light intensity, CO₂) over a long-range **LoRa** link, logs the data to **Supabase**, and lets a **Raspberry Pi gateway** automatically or manually drive greenhouse actuators — a ventilation fan, an irrigation pump, and a grow light.
 
 <p align="center">
   <img src="https://img.shields.io/badge/Status-Completed-brightgreen" alt="status" />
@@ -11,23 +11,10 @@ An IoT-based greenhouse monitoring and control system that automates the measure
 
 ---
 
-## 📖 Overview
+## 📖 Abstract
 
-Manual monitoring of greenhouse conditions is labour-intensive, inconsistent, and difficult to scale. This project replaces manual checks with an automated, low-power, long-range IoT pipeline: environmental sensors feed an ESP32 sensor node, data travels over LoRa to a Raspberry Pi gateway, gets stored in the Supabase cloud, and is visualized in real time on a web dashboard — which can also send control commands back to actuators (ventilation fan, irrigation pump, and lighting).
+Manual monitoring of greenhouse conditions is time-consuming and leads to inconsistent environmental control. This project automates that process end to end: an **ESP32 sensor node** reads temperature, humidity, soil moisture, light intensity, and CO₂ and transmits the readings over a long-range, low-power **SX1278 LoRa** link to a **Raspberry Pi gateway**. The gateway pushes the data to **Supabase** over REST APIs, drives an OLED status display, and polls Supabase for control commands, which it relays over LoRa to a second ESP32 **actuator node** that switches the fan, pump, and light via relays. A dashboard (designed in Figma) provides real-time visualization and manual override. Deep-sleep mode on the sensor node reduces power draw between readings, making the system suitable for low-cost, scalable, energy-efficient precision agriculture deployments.
 
-The system was designed and built as part of the **Project Based Learning (0701230605)** course, Department of Electronics and Telecommunication Engineering, **Symbiosis Institute of Technology, Pune**.
-
-> 📌 This repository currently includes the **Raspberry Pi gateway scripts** (LoRa ↔ Supabase bridge, OLED status display) along with the project report, presentation, and dashboard UI. ESP32 firmware and the dashboard frontend are not included.
-
-## ✨ Features
-
-- 📡 **Long-range wireless sensing** via SX1278 LoRa modules (low power, large coverage vs. Wi-Fi)
-- 🌡️ **Multi-parameter monitoring**: temperature, humidity, soil moisture, light intensity, and CO₂ concentration
-- ☁️ **Cloud integration** with Supabase using REST APIs (HTTP POST for sensor data, HTTP GET for control commands)
-- 📊 **Real-time dashboard** (Figma-designed) with live readings, historical trends (24h / 7d / 30d / all-time), min/avg/max stats, and out-of-range alerts
-- 🎛️ **Dual control modes** — automatic threshold-based control and manual override from the dashboard
-- 🔋 **Energy-efficient sensor node** using ESP32 deep sleep mode to extend battery life
-- 🏗️ **Physical prototype** built with an acrylic enclosure housing sensors, actuators, and wiring
 
 ## 🏛️ System Architecture
 
@@ -52,132 +39,175 @@ flowchart LR
     H -. commands .-> G
 ```
 
-**Data flow:**
-1. The ESP32 **sensor node** reads temperature, humidity, soil moisture, light intensity, and CO₂ from the connected sensors.
-2. Readings are transmitted wirelessly over **LoRa (SX1278)** to a **Raspberry Pi 5 gateway**.
-3. The gateway pushes data to **Supabase** via HTTP POST and polls it via HTTP GET for pending control commands.
-4. The **web dashboard** visualizes live and historical data and lets users trigger manual actions.
-5. Control commands flow back through the gateway over LoRa to the **ESP32 actuator node**, which drives the ventilation fan, irrigation pump, and lighting via a relay module.
+## ✨ Features
 
-## 🛠️ Tech Stack & Hardware
+- **Multi-parameter monitoring** — temperature, humidity, soil moisture, light intensity, and CO₂, sampled by the sensor node and logged to Supabase.
+- **Long-range, low-power link** — SX1278 LoRa (433 MHz, SF7, BW125, CR 4/5, CRC on) instead of Wi-Fi, for range and battery life suited to open greenhouse/farm areas.
+- **Automatic + manual actuator control** — the gateway can trigger fan/pump/light based on threshold logic, or a user can issue a command from the dashboard, which is written as a row in the Supabase `commands` table.
+- **Per-device command tracking** — each actuator (FAN/PUMP/LIGHT) tracks its own last-dispatched Supabase row ID, so repeated values (`ON` → `ON`) are never silently skipped.
+- **ACK-based delivery confirmation** — the actuator node sends `ACK:<DEVICE>:<STATE>` back over LoRa after switching a relay.
+- **Noise-tolerant framing** — commands are prefixed with a `....` marker; the actuator strips non-printable garbage before parsing, making the link tolerant of RF noise.
+- **OLED live status display** — the gateway's SSD1306 screen shows live readings, actuator states, and RSSI for on-site debugging.
+- **Power-efficient sensor node** — ESP32 deep sleep between reads cuts idle current from hundreds of mA to a few µA, enabling long battery-powered deployment.
+- **Cloud dashboard** — real-time charts (min/max/average trends) and status indicators (High/Low/Normal) for each parameter, designed in Figma.
 
-| Component | Details |
+## 🔧 Hardware
+
+| Node | Board | Radio | Sensors / Actuators |
+|---|---|---|---|
+| Sensor Node | ESP32 | SX1278 LoRa (433 MHz) | DHT11 (temp/humidity), BH1750 (light, I²C), soil moisture (analog), SCD40 (CO₂, I²C) |
+| Gateway | Raspberry Pi | RFM9x LoRa module (433 MHz) | SSD1306 OLED display (I²C, 0x3C) |
+| Actuator Node | ESP32 | SX1278 LoRa (433 MHz) | 3× relay → Fan, Grow Light, Irrigation Pump |
+
+### Actuator node pinout
+
+| Function | GPIO |
 |---|---|
-| Microcontroller | ESP32 (sensor node + actuator node) |
-| Gateway | Raspberry Pi 5 |
-| Wireless Communication | SX1278 LoRa module, 433 MHz, SPI |
-| Temperature & Humidity | DHT11 |
-| Light Intensity | BH1750 (I²C, 1–65535 lux) |
-| Soil Moisture | Analog soil moisture sensor (3.3–5V) |
-| CO₂ | SCD40 (I²C, 400–5000 ppm) |
-| Actuators | Ventilation fan, irrigation pump, grow lights (via relay module) |
-| Cloud / Backend | Supabase (real-time database + REST API) |
-| Dashboard | Figma-designed web UI |
-| Enclosure | Acrylic sheet model (~20 × 15 × 15 in) |
+| LoRa SS | 5 |
+| LoRa RST | 14 |
+| LoRa DIO0 | 2 |
+| Fan relay | 22 |
+| Light relay | 21 |
+| Pump relay | 15 |
 
-## 📊 Dashboard Preview
+> Relays are active-LOW: `HIGH` = off, `LOW` = on.
 
-The dashboard includes four main sections:
+Greenhouse enclosure: ~20 × 15 × 15 in, built from acrylic sheets for a lightweight, transparent housing that simplifies sensor/actuator mounting and wiring access.
 
-- **Dashboard** — live parameter cards (temperature, humidity, soil moisture, light intensity, CO₂) with optimal-range bars and High/Low/Normal status badges, plus an overall system status indicator
-- **Controls** — toggle switches for ventilation fan, water pump, and grow lights, with quick actions ("Cool Down", "Water Now") and a "Turn Off All" option
-- **Analytics & History** — historical trend charts (24 Hours / 7 Days / 30 Days / All Time) with min/avg/max summaries and data export
-- **Alerts** — notifications when parameters fall outside optimal ranges
+## 📡 LoRa radio configuration
 
-## 📁 Repository Structure
+Must match exactly on gateway and actuator:
+
+| Setting | Value |
+|---|---|
+| Frequency | 433 MHz |
+| Spreading factor | 7 |
+| Signal bandwidth | 125 kHz |
+| Coding rate | 4/5 |
+| CRC | Enabled |
+
+## 📨 Message protocol
+
+**Sensor uplink** (sensor node → gateway), comma-separated `key:value` pairs:
+```
+Temp:25.3,Hum:60.1,Soil:512,Light:800,CO2:450
+```
+
+**Command downlink** (gateway → actuator), `....`-prefixed to separate real commands from RF noise:
+```
+....FAN:ON
+....PUMP:OFF
+....LIGHT:ON
+```
+
+**ACK uplink** (actuator → gateway):
+```
+ACK:FAN:ON
+```
+
+## ☁️ Supabase setup
+
+Two tables back the system:
+
+**`sensor_data`**
+| column | type |
+|---|---|
+| temperature | float |
+| humidity | float |
+| soil_moisture | float |
+| light_intensity | float |
+| co2_level | float |
+| created_at | timestamp (default `now()`) |
+
+**`commands`**
+| column | type |
+|---|---|
+| id | int / uuid (primary key) |
+| command | text — one of `FAN:ON`, `FAN:OFF`, `PUMP:ON`, `PUMP:OFF`, `LIGHT:ON`, `LIGHT:OFF` |
+| created_at | timestamp (default `now()`) |
+
+To trigger an action (e.g. from the dashboard), insert a row:
+```sql
+insert into commands (command) values ('PUMP:ON');
+```
+The gateway polls the 10 most recent rows every `COMMAND_POLL_S` seconds, takes the latest row per device, and dispatches only rows it hasn't sent before.
+
+## 📁 Repository structure
 
 ```
-smart-greenhouse-monitoring/
-├── gateway/
-│   ├── lora_sensor_supabase.py     # LoRa receiver → parses sensor packets → pushes to Supabase
-│   ├── lora_final.py               # Polls Supabase for pending commands → sends over LoRa to actuator node
-│   ├── oled_display_lora_sensor.py # LoRa receiver + live OLED status display + Supabase upload
-│   ├── lora_send_test.py           # Standalone LoRa TX test script (sends FAN:ON / FAN:OFF)
-│   ├── .env.example                # Template for Supabase credentials (copy to .env, fill in, never commit .env)
-│   └── requirements.txt
-├── docs/
-│   ├── report.pdf                  # Full project report
-│   ├── presentation.pptx           # Final review presentation
-│   └── datasheets/                 # Component datasheets (BH1750, SCD40, ESP32, SX1278, Raspberry Pi)
-├── dashboard-screens/
-│   └── dashboard.pdf               # UI screens: login, dashboard, controls, analytics
-├── photos/
-│   ├── greenhouse-model.jpg
-│   ├── gateway-oled.jpg
-│   ├── sensor-node-interior.jpg
-│   └── actuator-node-interior.jpg
-├── .gitignore
+.
+├── gateway.py        # Raspberry Pi: LoRa <-> Supabase bridge, command dispatch, OLED display
+├── actuator.ino       # ESP32: LoRa receiver driving Fan / Light / Pump relays, sends ACKs
 └── README.md
 ```
+> The ESP32 **sensor node** firmware (DHT11/BH1750/soil/SCD40 read + LoRa transmit + deep sleep) is part of the deployed system described in the project report but is not yet included in this repository — add it here when available.
 
-> ESP32 sensor/actuator firmware and the dashboard frontend are not included yet — add them under `firmware/` and `dashboard/` if you upload that code later.
+## ⚙️ Configuration
 
-## 🚀 Running the Gateway Scripts
-
-These scripts run on the **Raspberry Pi gateway** and require an RFM9x LoRa HAT/module wired via SPI (and an SSD1306 OLED over I²C for `oled_display_lora_sensor.py`).
-
-### 1. Install dependencies
-```bash
-pip install adafruit-circuitpython-rfm9x adafruit-circuitpython-ssd1306 pillow requests python-dotenv
-```
-
-### 2. Configure Supabase credentials
-Create a `.env` file in `gateway/` (this file is git-ignored, **never commit it**):
-```
-SUPABASE_URL=https://your-project.supabase.co
-SUPABASE_KEY=your-anon-key-here
-```
-Each script then loads these at the top instead of hardcoding them:
+In `gateway.py`:
 ```python
-import os
-from dotenv import load_dotenv
-load_dotenv()
+SUPABASE_URL = "https://<your-project>.supabase.co"
+SUPABASE_KEY = "<your-anon-key>"
 
-SUPABASE_URL = os.getenv("SUPABASE_URL")
-SUPABASE_KEY = os.getenv("SUPABASE_KEY")
+COMMAND_POLL_S    = 3.0   # how often to check Supabase for new commands
+DISPLAY_UPDATE_S  = 2.0   # how often to refresh the OLED
 ```
 
-> ⚠️ **Security note:** earlier versions of these scripts had the Supabase key hardcoded directly in the source. If that key was ever pushed to a public repo or shared, regenerate it from your Supabase project settings before going further.
+> ⚠️ **Security:** don't commit real Supabase keys to a public repo. Load them from environment variables (e.g. `python-dotenv`) and add `.env` to `.gitignore`. Rotate any key that has already been pushed to a public repository.
 
-### 3. Run
+## ▶️ Running the gateway
+
 ```bash
-# Receive sensor data over LoRa and upload to Supabase
-python gateway/lora_sensor_supabase.py
-
-# Poll Supabase for pending commands and forward to the actuator node over LoRa
-python gateway/lora_final.py
-
-# Receive sensor data, show it on the OLED, and upload to Supabase
-python gateway/oled_display_lora_sensor.py
-
-# Standalone LoRa send test (no Supabase needed)
-python gateway/lora_send_test.py
+pip install adafruit-circuitpython-rfm9x adafruit-circuitpython-ssd1306 pillow requests
+python3 gateway.py
 ```
 
-`lora_sensor_supabase.py` and `oled_display_lora_sensor.py` expect incoming LoRa packets in the format:
-```
-Temp:22.3,Humidity:62.3,Soil:56.8,Light:77.7,CO2:424.8
-```
+## 📤 Flashing the actuator node
 
-## 📈 Results
+1. Open `actuator.ino` in the Arduino IDE / PlatformIO.
+2. Install the `LoRa` library (Sandeep Mistry).
+3. Select your ESP32 board and port, then upload.
+4. Open Serial Monitor at `115200` baud to watch received commands, relay state, and RSSI.
 
-- Stable, packet-loss-free point-to-point LoRa communication between the sensor node and gateway, verified via RSSI monitoring
-- Reliable real-time data flow from sensors → ESP32 → LoRa → Raspberry Pi → Supabase → dashboard
-- Deep sleep mode reduced ESP32 idle current draw from hundreds of mA to a few µA, significantly extending battery life
-- Functional automatic and manual control of ventilation, irrigation, and lighting
+## 🖥️ Dashboard
 
-## 🔮 Future Scope
+A Figma-designed web dashboard provides:
+- Real-time numeric + graphical display of all five environmental parameters, with High/Low/Normal status labels
+- Historical trend charts (min/max/average) for soil moisture, light, temperature, and humidity
+- Navigation sections: Dashboard, Analytics, Controls, Alerts
+- Manual actuator control (writes directly to the Supabase `commands` table)
 
-- Integration of pH and nutrient sensors for deeper soil analysis
-- Machine learning-based predictive control using historical data
-- Mobile app with push notifications/alerts
-- Solar-powered nodes for full energy autonomy
-- Scaling to multi-greenhouse / large-area deployments
+## 🧪 Results
+
+- Stable, packet-loss-free LoRa communication was observed between the sensor node and gateway during testing, with RSSI monitored to validate link quality and antenna placement.
+- The actuator node was successfully expanded from fan-only control to fan + pump + light, with ACK-confirmed delivery for each command.
+- Deep sleep on the sensor node reduced idle current from hundreds of mA to a few µA between sampling cycles.
+
+## 🚀 Future Scope
+
+- Additional sensors: pH, nutrients, advanced gas sensing
+- Machine learning for predictive environmental control
+- Native mobile app with real-time push alerts
+- Solar power for fully off-grid, sustainable operation
+- Scaling to multi-node, large-area precision agriculture deployments
 
 ## 📚 References
 
-Key datasheets and papers referenced during development are listed in [`docs/report.pdf`](docs/report.pdf), including datasheets for the BH1750, SCD40, ESP32, SX1278, and Raspberry Pi 4/5, plus IoT/LoRa smart-agriculture literature.
+1. Augustin, A., Yi, J., Clausen, T., & Townsley, W. M. (2016). A Study of LoRa: Long Range & Low Power Networks for the Internet of Things. *Sensors*, 16(9), 1466.
+2. Bicamumakuba, E. et al. (2021). Internet of Things and LoRaWAN for smart agriculture: A review. *Computers and Electronics in Agriculture*.
+3. Centenaro, M., Vangelista, L., Zanella, A., & Zorzi, M. (2016). Long range communications in unlicensed bands. *IEEE Wireless Communications*, 23(5), 60–67.
+4. Jawad, H. M., Nordin, R., Gharghan, S. K., Jawad, A. M., & Ismail, M. (2017). Energy Efficient Wireless Sensor Networks for Precision Agriculture: A Review. *Sensors*, 17(8), 1781.
+5. Mezouari, A. et al. (2023). LoRaWAN-based intelligent multi-greenhouse monitoring and control platform. *E3S Web of Conferences*.
+6. Patil, K. A., & Kale, N. R. (2016). A model for smart agriculture using IoT. *ICGTSPICC*.
+7. Putra, S. D. et al. (2022). Design of IoT Monitoring System Based on LoRaWAN Architecture for Smart Green House. *IOP Conf. Series: Earth and Environmental Science*, 1012, 012090.
+8. Tzounis, A., Katsoulas, N., Bartzanas, T., & Kittas, C. (2017). Internet of Things in agriculture, recent advances and future challenges. *Biosystems Engineering*, 164, 31–48.
+9. ur Rehman, A. et al. (2022). Smart greenhouse monitoring system using IoT and wireless sensor networks. *IJACSA*.
+10. Zhang, Y. et al. (2020). Carbon dioxide monitoring and control in greenhouse cultivation: A review. *Biosystems Engineering*.
 
-## 📄 License
-
-This project was developed for academic purposes as part of a Project Based Learning course. Add a license (e.g., MIT) here if you intend to open-source it for wider use.
+### Component datasheets
+- [BH1750 light sensor](https://rohmfs.rohm.com/en/products/databook/datasheet/ic/sensor/light/bh1750fvi-e.pdf)
+- [Soil moisture sensor](https://components101.com/sites/default/files/component_datasheet/Soil-Moisture-Sensor-Datasheet.pdf)
+- [SCD40 CO₂ sensor](https://sensirion.com/media/documents/48C4B7FB/6165371E/Sensirion_CO2_Sensors_SCD4x_Datasheet.pdf)
+- [ESP32](https://www.espressif.com/sites/default/files/documentation/esp32_datasheet_en.pdf)
+- [SX1278 LoRa module](https://www.semtech.com/uploads/documents/sx1276_77_78_79.pdf)
+- [Raspberry Pi 4](https://datasheets.raspberrypi.com/rpi4/raspberry-pi-4-datasheet.pdf)
